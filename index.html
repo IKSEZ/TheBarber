@@ -4,13 +4,13 @@
 <meta charset="utf-8">
 <title>Minha Barbearia</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#16140F">
+<meta name="theme-color" content="#1A1512">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;1,9..144,400;1,9..144,500&family=Space+Grotesk:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -18,10 +18,8 @@
 <!-- ============ LOGIN ============ -->
 <section id="login" class="login" hidden>
   <div class="login-box">
-    <div class="logo" aria-hidden="true">
-      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/></svg>
-    </div>
-    <h1>Minha Barbearia</h1>
+    <div class="brand" aria-hidden="true"><i></i><span>barbearia</span></div>
+    <h1>Minha<br>Barbearia</h1>
     <p class="muted" id="login-sub">Entre para registrar seus atendimentos.</p>
 
     <div id="login-aviso" class="aviso" hidden>
@@ -37,30 +35,26 @@
         <span>Senha</span>
         <input id="login-senha" type="password" autocomplete="current-password" placeholder="Sua senha" required>
       </label>
-      <label class="field" id="login-conf-wrap" hidden>
-        <span>Confirmar senha</span>
-        <input id="login-conf" type="password" autocomplete="new-password" placeholder="Repita a senha">
-      </label>
       <div id="login-erro" class="erro" role="alert" hidden></div>
       <button id="login-btn" class="btn-primary" type="submit">Entrar</button>
     </form>
 
     <div class="login-links">
-      <button type="button" class="link" id="login-toggle">Criar conta</button>
       <button type="button" class="link" id="login-reset">Esqueci a senha</button>
     </div>
+    <p class="login-nota">Ainda não tem acesso? As contas são criadas pela nossa equipe. Peça a sua para quem te passou o app.</p>
   </div>
 </section>
 
 <!-- ============ APP ============ -->
 <div id="app" class="app" hidden>
   <!--- BANNER DE INSTALAÇÃO --->
-  <div id="install-banner" style="display:none; background:var(--card, #1A1A1A); padding:15px; border-radius:12px; margin:15px; text-align:center; border: 1px solid var(--border, #333); z-index: 100;">
-    <p id="install-text" style="margin:0 0 10px 0; font-weight:600; font-size:14px;">
-      Instale o aplicativo da Barbearia para acesso rápido!
+  <div id="install-banner" class="install" style="display:none">
+    <p id="install-text">
+      Instale o app na tela inicial para abrir direto, sem o navegador.
     </p>
-    <button id="btn-instalar" class="btn-primary" style="width:100%">
-      Instalar Aplicativo
+    <button id="btn-instalar" class="btn-primary">
+      Instalar app
     </button>
   </div>
   <main id="view" class="view"></main>

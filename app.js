@@ -5,7 +5,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
 import {
   getAuth, onAuthStateChanged, signInWithEmailAndPassword,
-  createUserWithEmailAndPassword, signOut, sendPasswordResetEmail
+  signOut, sendPasswordResetEmail
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 import { getDatabase, ref, onValue, set, push, update, remove } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -66,6 +66,7 @@ const ICON = {
 const hojeIso = () => iso(new Date());
 const state = {
   uid: null, email: '',
+  perfil: undefined, // undefined = carregando, null = ainda sem nome da barbearia
   servicos: {}, atendimentos: {}, despesas: {}, ativo: null,
   view: 'atender',
   sel: null, cliente: '',
@@ -110,13 +111,19 @@ function render() {
   if (!state.uid) return;
   clearInterval(timerId);
   const fns = { atender: vAtender, andamento: vAndamento, finalizar: vFinalizar, dashboard: vDashboard, gestao: vGestao };
-  $('#app').classList.toggle('focus', state.view === 'andamento' || state.view === 'finalizar');
+  const semNome = !state.perfil || !state.perfil.nome;
+  $('#app').classList.toggle('focus', semNome || state.view === 'andamento' || state.view === 'finalizar');
+  if (semNome) {
+    // enquanto o perfil carrega, mostra a tela vazia para não piscar o nome padrão
+    $('#view').innerHTML = state.perfil === undefined ? '' : vNome();
+    return;
+  }
   $('#view').innerHTML = (fns[state.view] || vAtender)();
   $$('#nav button').forEach((b) => b.classList.toggle('on', b.dataset.v === state.view));
   if (state.view === 'andamento') startTimer();
 }
 // re-render quando chegam dados, sem atrapalhar quem esta digitando no "Finalizar"
-const renderSoft = () => { if (state.view !== 'finalizar') render(); };
+const renderSoft = () => { if (state.view !== 'finalizar' && !$('#nome-barbearia')) render(); };
 
 function startTimer() {
   const el = $('#timer');
@@ -135,42 +142,44 @@ function vAtender() {
   const s0 = startOfDay(new Date()).getTime();
   const hoje = concluidos().filter((a) => a.inicio >= s0);
   const fat = somaAt(hoje), n = hoje.length;
-  const dataTxt = cap(new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).replace('-feira', ''));
+  const dataTxt = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).replace('-feira', '');
 
-  const chips = servs.map((s) => `
-    <button class="chip ${state.sel && state.sel.id === s.id ? 'sel' : ''}" data-act="sel" data-id="${s.id}">
+  const linhas = servs.map((s) => `
+    <button class="serv ${state.sel && state.sel.id === s.id ? 'sel' : ''}" data-act="sel" data-id="${s.id}" aria-pressed="${!!(state.sel && state.sel.id === s.id)}">
       <span class="n">${esc(s.nome)}</span><span class="p">${money(s.preco)}</span>
     </button>`).join('');
   const custom = state.sel && !state.sel.id ? `
-    <button class="chip sel" data-act="outro">
+    <button class="serv sel" data-act="outro" aria-pressed="true">
       <span class="n">${esc(state.sel.nome)}</span><span class="p">${money(state.sel.preco)}</span>
     </button>` : '';
 
   return `
-    <div class="top">
-      <div>
-        <div class="date">${dataTxt}</div>
-        <h1 class="title">Pronto para atender?</h1>
-      </div>
+    <div class="bar">
+      <button class="brand brand-btn" data-act="renomear" aria-label="Mudar o nome da barbearia"><i></i><span>${esc(state.perfil.nome)}</span></button>
       <button class="icon-btn" data-act="sair" aria-label="Sair da conta">${ICON.logout}</button>
     </div>
 
+    <div>
+      <div class="date">${dataTxt}</div>
+      <h1 class="title">Pronto para atender?</h1>
+    </div>
+
     <div class="stats">
-      <div class="stat"><div class="k">Hoje</div><div class="v brass">${money(fat)}</div></div>
-      <div class="stat"><div class="k">Atendimentos</div><div class="v">${n}</div></div>
-      <div class="stat"><div class="k">Ticket médio</div><div class="v">${money(n ? Math.round(fat / n) : 0)}</div></div>
+      <div class="stat"><div class="k">hoje</div><div class="v acc">${money(fat)}</div></div>
+      <div class="stat"><div class="k">atendimentos</div><div class="v">${n}</div></div>
+      <div class="stat"><div class="k">ticket médio</div><div class="v">${money(n ? Math.round(fat / n) : 0)}</div></div>
     </div>
 
     <div>
-      <div class="label" style="margin-bottom:10px">Qual serviço?</div>
-      <div class="grid2">
-        ${chips}${custom}
-        <button class="chip dashed" data-act="outro">${ICON.plus} Outro serviço (valor livre)</button>
+      <div class="label" style="margin-bottom:8px">serviço</div>
+      <div class="servs">
+        ${linhas}${custom}
+        <button class="serv extra" data-act="outro">${ICON.plus}<span class="n">Outro serviço, com valor livre</span></button>
       </div>
     </div>
 
     <label class="field">
-      <span>Cliente</span>
+      <span>cliente</span>
       <input id="cliente" type="text" placeholder="Nome (opcional)" value="${esc(state.cliente)}" data-inp="cliente" autocomplete="off">
     </label>
 
@@ -179,26 +188,53 @@ function vAtender() {
   `;
 }
 
+/* ---------------- tela: Nome da barbearia (primeiro acesso) ---------------- */
+function vNome() {
+  return `
+    <form class="setup" data-form="nome" novalidate>
+      <div class="brand" aria-hidden="true"><i></i><span>bem-vindo</span></div>
+      <h1 class="title">Como se chama a sua barbearia?</h1>
+      <p class="muted">Esse nome aparece no topo do app. Dá para mudar depois tocando nele.</p>
+      <label class="field">
+        <span>nome da barbearia</span>
+        <input id="nome-barbearia" type="text" maxlength="40" placeholder="Ex.: Barbearia do Zé" autocomplete="organization" required>
+      </label>
+      <div class="spacer"></div>
+      <button class="btn-primary" type="submit">Salvar e começar</button>
+      <button class="link" type="button" data-act="sair">Entrar com outra conta</button>
+    </form>
+  `;
+}
+const salvarNome = (nome) => {
+  state.perfil = { ...(state.perfil || {}), nome };
+  document.title = nome;
+  return set(ref(db, P('perfil/nome')), nome).catch(falhou);
+};
+
 /* ---------------- tela: Em atendimento ---------------- */
 function vAndamento() {
   const a = state.ativo;
   if (!a) { queueMicrotask(() => go('atender')); return ''; }
   return `
     <div class="top">
-      <span class="pill"><i></i> Em atendimento</span>
-      <span class="date">Iniciado às ${hhmm(a.inicio)}</span>
+      <span class="pill"><i></i> em atendimento</span>
+      <span class="date">desde ${hhmm(a.inicio)}</span>
     </div>
 
     <div class="timer-wrap">
-      <div class="k">Tempo de atendimento</div>
-      <div class="timer" id="timer">00:00</div>
-      <div class="date">min : seg</div>
+      <div class="rot">tempo na cadeira</div>
+      <div class="timer" id="timer" role="timer" aria-label="Tempo de atendimento">00:00</div>
     </div>
 
-    <div class="card info">
-      <div class="r"><span>Cliente</span><b>${esc(a.cliente || 'Sem nome')}</b></div>
-      <div class="r"><span>Serviço</span><b>${esc(a.servicoNome)}</b></div>
-      <div class="r"><span>Valor da tabela</span><b class="big">${money(a.preco)}</b></div>
+    <div class="comanda">
+      <div class="com-head">
+        <div>
+          <div class="rot">comanda</div>
+          <p class="cliente">${esc(a.cliente || 'Sem nome')}</p>
+        </div>
+      </div>
+      <div class="com-linha"><span>serviço</span><b>${esc(a.servicoNome)}</b></div>
+      <div class="com-total"><span class="rot">valor da tabela</span><span class="num">${money(a.preco)}</span></div>
     </div>
 
     <div class="spacer"></div>
@@ -219,6 +255,7 @@ function vFinalizar() {
   const mins = Math.max(1, Math.round((Date.now() - a.inicio) / 60000));
   const p = Number(a.preco) || 0;
   const opcoes = [p, p - 5, p + 5].filter((v, i) => v > 0 && [p, p - 5, p + 5].indexOf(v) === i);
+  const total = (Number(state.fin.valor) || 0) + (Number(state.fin.gorjeta) || 0);
 
   return `
     <div class="head">
@@ -226,28 +263,37 @@ function vFinalizar() {
       <h1>Finalizar atendimento</h1>
     </div>
 
-    <div class="card summary">
-      <div><b>${esc(a.servicoNome)}</b><small>${esc(a.cliente || 'Sem nome')}</small></div>
-      <div style="text-align:right"><small>Duração</small><b>${mins} min</b></div>
-    </div>
-
-    <div>
-      <label class="label" for="f-valor" style="display:block;margin-bottom:10px">Valor cobrado</label>
-      <div class="valor-box"><span>R$</span><input id="f-valor" type="text" inputmode="decimal" value="${inputMoney(state.fin.valor)}" autocomplete="off"></div>
-      <div class="quick">
-        ${opcoes.map((v) => `<button type="button" data-act="fval" data-v="${v}" class="${v === Number(state.fin.valor) ? 'sel' : ''}">${v === p ? 'Tabela ' : ''}${money(v)}</button>`).join('')}
+    <div class="comanda">
+      <div class="com-head">
+        <div>
+          <div class="rot">${esc(a.servicoNome)}</div>
+          <p class="cliente">${esc(a.cliente || 'Sem nome')}</p>
+        </div>
+        <span class="num rot">${mins} min</span>
       </div>
-    </div>
 
-    <label class="inline-field">
-      <span>Gorjeta <em>(opcional)</em></span>
-      <input id="f-gorjeta" type="text" inputmode="decimal" value="${inputMoney(state.fin.gorjeta)}" aria-label="Valor da gorjeta" autocomplete="off">
-    </label>
+      <div style="padding-top:14px">
+        <label class="label" for="f-valor">valor cobrado</label>
+        <div class="valor-box"><span>R$</span><input id="f-valor" type="text" inputmode="decimal" value="${inputMoney(state.fin.valor)}" autocomplete="off" data-inp="fin"></div>
+        <div class="quick">
+          ${opcoes.map((v) => `<button type="button" data-act="fval" data-v="${v}" class="${v === Number(state.fin.valor) ? 'sel' : ''}">${v === p ? 'tabela ' : ''}${money(v)}</button>`).join('')}
+        </div>
+      </div>
 
-    <div>
-      <div class="label" style="margin-bottom:10px">Forma de pagamento</div>
-      <div class="grid2">
-        ${PAGAMENTOS.map((m) => `<button class="pay ${state.fin.pagamento === m ? 'sel' : ''}" data-act="pay" data-v="${m}">${m}</button>`).join('')}
+      <label class="inline-field">
+        <span>Gorjeta <em>(opcional)</em></span>
+        <input id="f-gorjeta" type="text" inputmode="decimal" value="${inputMoney(state.fin.gorjeta)}" aria-label="Valor da gorjeta" autocomplete="off" data-inp="fin">
+      </label>
+
+      <div style="padding-top:14px">
+        <div class="label">forma de pagamento</div>
+        <div class="formas" role="group" aria-label="Forma de pagamento">
+          ${PAGAMENTOS.map((m) => `<button class="pay ${state.fin.pagamento === m ? 'sel' : ''}" data-act="pay" data-v="${m}" aria-pressed="${state.fin.pagamento === m}">${m}</button>`).join('')}
+        </div>
+      </div>
+
+      <div class="com-total" style="margin-top:14px;border-top:1px dashed var(--paper-line)">
+        <span class="rot">total</span><span class="num" id="f-total">${money(total)}</span>
       </div>
     </div>
 
@@ -255,6 +301,10 @@ function vFinalizar() {
     <button class="btn-primary" data-act="confirmar">${ICON.check} Confirmar e registrar</button>
   `;
 }
+const atualizaTotal = () => {
+  const el = $('#f-total');
+  if (el) el.textContent = money(parseMoney($('#f-valor').value) + parseMoney($('#f-gorjeta').value));
+};
 
 /* ---------------- tela: Dashboard ---------------- */
 function intervalo(per, now = new Date()) {
@@ -291,14 +341,14 @@ function chartSvg(items) {
     const x = i * slot + (slot - bw) / 2, cx = x + bw / 2;
     if (it.value > 0) {
       const h = Math.max(6, (it.value / max) * maxH);
-      out += `<rect x="${x.toFixed(1)}" y="${(base - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="4" fill="${it.atual ? '#E0A93B' : '#9A7630'}"/>`;
-      out += `<text x="${cx.toFixed(1)}" y="${(base - h - 5).toFixed(1)}" font-size="12" font-weight="600" fill="#F4EFE6" text-anchor="middle">${Math.round(it.value)}</text>`;
+      out += `<rect x="${x.toFixed(1)}" y="${(base - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${it.atual ? '#DF6144' : '#7A3B2B'}"/>`;
+      out += `<text x="${cx.toFixed(1)}" y="${(base - h - 6).toFixed(1)}" font-size="11" fill="${it.atual ? '#F3ECE1' : '#9C8B7B'}" text-anchor="middle">${Math.round(it.value)}</text>`;
     } else {
-      out += `<rect x="${x.toFixed(1)}" y="${base - 4}" width="${bw.toFixed(1)}" height="4" rx="2" fill="#3A352A"/>`;
+      out += `<rect x="${x.toFixed(1)}" y="${base - 2}" width="${bw.toFixed(1)}" height="2" fill="#4D3D31"/>`;
     }
-    out += `<text x="${cx.toFixed(1)}" y="143" font-size="12" fill="#B0A896" text-anchor="middle">${esc(it.label)}</text>`;
+    out += `<text x="${cx.toFixed(1)}" y="144" font-size="11" fill="${it.atual ? '#F3ECE1' : '#9C8B7B'}" text-anchor="middle">${esc(it.label.toLowerCase())}</text>`;
   });
-  return `<svg viewBox="0 0 318 150" role="img" aria-label="Gráfico de faturamento" font-family="Inter, sans-serif">${out}</svg>`;
+  return `<svg viewBox="0 0 318 150" role="img" aria-label="Gráfico de faturamento" font-family="'DM Mono', monospace"><line x1="0" x2="318" y1="${base + 0.5}" y2="${base + 0.5}" stroke="#352A22"/>${out}</svg>`;
 }
 
 function vDashboard() {
@@ -330,31 +380,31 @@ function vDashboard() {
   const maxC = top.length ? top[0][1] : 1;
 
   return `
-    <h1 class="title" style="margin-top:0">Dashboard</h1>
+    <h1 class="title">Dashboard</h1>
 
     <div class="seg" role="group" aria-label="Período">
       ${[['hoje', 'Hoje'], ['semana', 'Semana'], ['mes', 'Mês']].map(([v, l]) => `<button class="${per === v ? 'on' : ''}" data-act="per" data-v="${v}">${l}</button>`).join('')}
     </div>
 
-    <div class="card big-card">
-      <div class="k">Faturamento ${{ hoje: 'de hoje', semana: 'da semana', mes: 'do mês' }[per]}</div>
+    <div class="big-card">
+      <div class="rot">faturamento ${{ hoje: 'de hoje', semana: 'da semana', mes: 'do mês' }[per]}</div>
       <div class="line"><span class="v">${money(fat)}</span>${delta}</div>
     </div>
 
     <div class="stats two">
-      <div class="stat"><div class="k">Atendimentos</div><div class="v">${n}</div></div>
-      <div class="stat"><div class="k">Ticket médio</div><div class="v">${money(n ? Math.round(fat / n) : 0)}</div></div>
-      <div class="stat"><div class="k">Despesas</div><div class="v">${money(desp)}</div></div>
-      <div class="stat"><div class="k">Lucro</div><div class="v" style="color:${lucro < 0 ? 'var(--red)' : 'var(--green)'}">${money(lucro)}</div></div>
+      <div class="stat"><div class="k">atendimentos</div><div class="v">${n}</div></div>
+      <div class="stat"><div class="k">ticket médio</div><div class="v">${money(n ? Math.round(fat / n) : 0)}</div></div>
+      <div class="stat"><div class="k">despesas</div><div class="v">${money(desp)}</div></div>
+      <div class="stat"><div class="k">lucro</div><div class="v" style="color:${lucro < 0 ? 'var(--neg)' : 'var(--pos)'}">${money(lucro)}</div></div>
     </div>
 
-    <div class="card chart">
-      <div class="label">Faturamento ${tituloGraf} (R$)</div>
+    <div class="bloco chart">
+      <div class="label">faturamento ${tituloGraf}, em R$</div>
       ${chartSvg(items)}
     </div>
 
-    <div class="card">
-      <div class="label">Serviços mais feitos</div>
+    <div class="bloco">
+      <div class="label">serviços mais feitos</div>
       ${top.length ? top.map(([nome, c]) => `
         <div class="bar-row"><span class="n">${esc(nome)}</span><div class="t"><i style="width:${Math.round((c / maxC) * 100)}%"></i></div><span class="c">${c}</span></div>`).join('')
         : '<div class="empty">Nenhum atendimento neste período.</div>'}
@@ -367,7 +417,7 @@ function vGestao() {
   const abas = [['atendimentos', 'Atendimentos'], ['servicos', 'Serviços'], ['despesas', 'Despesas']];
   const seg = `<div class="seg" role="group" aria-label="Seção">${abas.map(([v, l]) => `<button class="${state.aba === v ? 'on' : ''}" data-act="aba" data-v="${v}">${l}</button>`).join('')}</div>`;
   const corpo = { atendimentos: gAtendimentos, servicos: gServicos, despesas: gDespesas }[state.aba]();
-  return `<h1 class="title" style="margin-top:0">Gestão</h1>${seg}${corpo}`;
+  return `<h1 class="title">Gestão</h1>${seg}${corpo}`;
 }
 
 function gAtendimentos() {
@@ -383,7 +433,7 @@ function gAtendimentos() {
       <span class="label">${titulo}</span>
       <input type="date" value="${state.dia}" data-chg="dia" aria-label="Escolher o dia">
     </div>
-    <div class="date" style="margin-top:-8px">${arr.length} ${arr.length === 1 ? 'atendimento' : 'atendimentos'}</div>
+    <div class="date" style="margin-top:-14px">${arr.length} ${arr.length === 1 ? 'atendimento' : 'atendimentos'}</div>
 
     ${arr.length ? `<div class="list">${arr.map((a) => `
       <div class="item">
@@ -394,12 +444,12 @@ function gAtendimentos() {
       </div>`).join('')}</div>`
       : '<div class="card empty">Nenhum atendimento neste dia.</div>'}
 
-    <div class="total"><span>Total do dia</span><b>${money(total)}</b></div>
+    <div class="total"><span>total do dia</span><b>${money(total)}</b></div>
 
     <div class="stats">
-      <div class="stat"><div class="k">Pix</div><div class="v">${money(por((a) => a.pagamento === 'Pix'))}</div></div>
-      <div class="stat"><div class="k">Dinheiro</div><div class="v">${money(por((a) => a.pagamento === 'Dinheiro'))}</div></div>
-      <div class="stat"><div class="k">Cartão</div><div class="v">${money(por((a) => a.pagamento === 'Débito' || a.pagamento === 'Crédito'))}</div></div>
+      <div class="stat"><div class="k">pix</div><div class="v">${money(por((a) => a.pagamento === 'Pix'))}</div></div>
+      <div class="stat"><div class="k">dinheiro</div><div class="v">${money(por((a) => a.pagamento === 'Dinheiro'))}</div></div>
+      <div class="stat"><div class="k">cartão</div><div class="v">${money(por((a) => a.pagamento === 'Débito' || a.pagamento === 'Crédito'))}</div></div>
     </div>
 
     <div class="spacer"></div>
@@ -438,7 +488,7 @@ function gDespesas() {
         <span class="val">${money(d.valor)}</span>
         <button class="icon-btn" data-act="del-desp" data-id="${d.id}" aria-label="Excluir despesa">${ICON.trash}</button>
       </div>`).join('')}</div>` : '<div class="card empty">Nenhuma despesa neste mês.</div>'}
-    <div class="total"><span>Total do mês</span><b>${money(total)}</b></div>
+    <div class="total"><span>total do mês</span><b>${money(total)}</b></div>
     <div class="spacer"></div>
     <button class="btn-ghost" data-act="nova-desp">${ICON.plus} Lançar despesa</button>
   `;
@@ -490,6 +540,17 @@ const falhou = () => toast('Não foi possível salvar. Confira a conexão e as r
 const acoes = {
   nav: (d) => go(d.v === 'atender' && state.ativo ? 'andamento' : d.v),
   sair: () => { if (confirm('Sair da conta?')) signOut(auth); },
+  renomear: () => openSheet({
+    title: 'Nome da barbearia',
+    fields: [{ name: 'nome', label: 'Nome', value: state.perfil?.nome || '', placeholder: 'Ex.: Barbearia do Zé' }],
+    onSubmit: (v) => {
+      const nome = v.nome.trim().slice(0, 40);
+      if (!nome) { toast('Digite o nome da barbearia'); return false; }
+      salvarNome(nome);
+      render();
+      toast('Nome salvo');
+    }
+  }),
 
   // --- atender
   sel: (d) => {
@@ -554,10 +615,11 @@ const acoes = {
   fval: (d, el) => {
     $('#f-valor').value = inputMoney(Number(d.v));
     $$('.quick button').forEach((b) => b.classList.toggle('sel', b === el));
+    atualizaTotal();
   },
   pay: (d, el) => {
     state.fin.pagamento = d.v;
-    $$('.pay').forEach((b) => b.classList.toggle('sel', b === el));
+    $$('.pay').forEach((b) => { b.classList.toggle('sel', b === el); b.setAttribute('aria-pressed', b === el); });
   },
   confirmar: () => {
     const a = state.ativo;
@@ -670,11 +732,20 @@ document.addEventListener('click', (e) => {
 });
 document.addEventListener('input', (e) => {
   if (e.target.dataset.inp === 'cliente') state.cliente = e.target.value;
+  if (e.target.dataset.inp === 'fin') atualizaTotal();
 });
 document.addEventListener('change', (e) => {
   const k = e.target.dataset.chg;
   if (k === 'dia' && e.target.value) { state.dia = e.target.value; render(); }
   if (k === 'mes' && e.target.value) { state.mes = e.target.value; render(); }
+});
+document.addEventListener('submit', (e) => {
+  if (e.target.dataset.form !== 'nome') return;
+  e.preventDefault();
+  const nome = $('#nome-barbearia').value.trim().slice(0, 40);
+  if (!nome) { toast('Digite o nome da barbearia'); $('#nome-barbearia').focus(); return; }
+  salvarNome(nome);
+  go('atender');
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#sheet').hidden) closeSheet(); });
 
@@ -693,6 +764,12 @@ function conectar() {
     state.servicos = v || {};
     renderSoft();
   });
+  ouvir('perfil', (snap) => {
+    state.perfil = snap.val() || null;
+    if (state.perfil?.nome) document.title = state.perfil.nome;
+    renderSoft();
+    if (!state.perfil?.nome) setTimeout(() => $('#nome-barbearia')?.focus(), 50);
+  });
   ouvir('atendimentos', (snap) => { state.atendimentos = snap.val() || {}; renderSoft(); });
   ouvir('despesas', (snap) => { state.despesas = snap.val() || {}; renderSoft(); });
   ouvir('ativo', (snap) => {
@@ -710,7 +787,6 @@ function desconectar() {
 
 /* ---------------- login ---------------- */
 const loginEl = $('#login'), appEl = $('#app');
-let modoCriar = false;
 
 function mostrarLogin() {
   appEl.hidden = true; loginEl.hidden = false;
@@ -731,25 +807,12 @@ function traduzErro(err) {
     'auth/invalid-credential': 'E-mail ou senha incorretos.',
     'auth/user-not-found': 'E-mail ou senha incorretos.',
     'auth/wrong-password': 'E-mail ou senha incorretos.',
-    'auth/email-already-in-use': 'Já existe uma conta com esse e-mail.',
-    'auth/weak-password': 'A senha precisa ter pelo menos 6 caracteres.',
     'auth/too-many-requests': 'Muitas tentativas. Aguarde um pouco e tente de novo.',
     'auth/network-request-failed': 'Sem conexão com a internet.',
     'auth/operation-not-allowed': 'Ative o login por e-mail/senha no Firebase (Authentication).'
   };
   return mapa[c] || 'Não foi possível entrar. Tente novamente.';
 }
-function aplicarModo() {
-  $('#login-btn').textContent = modoCriar ? 'Criar conta' : 'Entrar';
-  $('#login-toggle').textContent = modoCriar ? 'Já tenho conta' : 'Criar conta';
-  $('#login-sub').textContent = modoCriar ? 'Crie sua conta para começar.' : 'Entre para registrar seus atendimentos.';
-  $('#login-conf-wrap').hidden = !modoCriar;
-  $('#login-senha').autocomplete = modoCriar ? 'new-password' : 'current-password';
-  erroLogin('');
-}
-
-$('#login-toggle').addEventListener('click', () => { modoCriar = !modoCriar; aplicarModo(); });
-
 $('#login-reset').addEventListener('click', async () => {
   if (!configurado) return;
   const email = $('#login-email').value.trim();
@@ -766,12 +829,10 @@ $('#login-form').addEventListener('submit', async (e) => {
   if (!configurado) return;
   const email = $('#login-email').value.trim(), senha = $('#login-senha').value;
   if (!email || !senha) { erroLogin('Preencha e-mail e senha.'); return; }
-  if (modoCriar && senha !== $('#login-conf').value) { erroLogin('As senhas não são iguais.'); return; }
   const btn = $('#login-btn');
   btn.disabled = true; erroLogin('');
   try {
-    if (modoCriar) await createUserWithEmailAndPassword(auth, email, senha);
-    else await signInWithEmailAndPassword(auth, email, senha);
+    await signInWithEmailAndPassword(auth, email, senha);
   } catch (err) {
     erroLogin(traduzErro(err));
   } finally {
@@ -787,14 +848,15 @@ if (!configurado) {
   onAuthStateChanged(auth, (user) => {
     if (user) {
       state.uid = user.uid; state.email = user.email || '';
-      state.seeded = false; state.view = 'atender'; state.sel = null;
+      state.seeded = false; state.view = 'atender'; state.sel = null; state.perfil = undefined;
       mostrarApp();
       conectar();
       render();
     } else {
       desconectar();
-      Object.assign(state, { uid: null, servicos: {}, atendimentos: {}, despesas: {}, ativo: null });
-      $('#login-senha').value = ''; $('#login-conf').value = '';
+      Object.assign(state, { uid: null, perfil: undefined, servicos: {}, atendimentos: {}, despesas: {}, ativo: null });
+      document.title = 'Minha Barbearia';
+      $('#login-senha').value = '';
       mostrarLogin();
     }
   });
@@ -819,7 +881,7 @@ if (!isStandalone && installBanner) {
 
   if (isIOS) {
     // No iOS não existe botão nativo. Ensinamos o caminho manual.
-    installBanner.style.display = 'block';
+    installBanner.style.display = 'flex';
     btnInstalar.style.display = 'none'; // Esconde o botão
     installText.innerHTML = `
       Para instalar no iPhone:<br><br>
@@ -831,7 +893,7 @@ if (!isStandalone && installBanner) {
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault(); // Impede o banner padrão do navegador
       promptInstalacao = e;
-      installBanner.style.display = 'block'; // Mostra nosso banner customizado
+      installBanner.style.display = 'flex'; // Mostra nosso banner customizado
     });
 
     btnInstalar.addEventListener('click', async () => {

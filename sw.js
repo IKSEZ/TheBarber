@@ -1,6 +1,6 @@
 // Service worker simples: guarda os arquivos do app para abrir rapido e funcionar sem sinal.
 // Os dados ficam no Firebase (que tambem guarda cache local do banco).
-const CACHE = 'barbearia-v1';
+const CACHE = 'barbearia-v2';
 const ASSETS = ['./', 'index.html', 'styles.css', 'app.js', 'firebase-config.js', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', (e) => {

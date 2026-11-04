@@ -37,7 +37,16 @@ App (PWA) para barbeiro autonomo: inicia o atendimento, finaliza com o valor e a
 python -m http.server 8080
 ```
 
-   e abra http://localhost:8080. Crie sua conta na tela de login.
+   e abra http://localhost:8080.
+
+## Criar contas dos clientes
+
+O app nao tem cadastro: as contas sao criadas manualmente.
+
+1. Firebase > **Authentication** > Usuarios > **Adicionar usuario** (e-mail e senha) e passe os dados para o cliente.
+2. Para impedir que alguem crie conta por fora do app (a chave do Firebase e publica), va em **Authentication** > Configuracoes > **Acoes do usuario** e desmarque **Ativar criacao (inscricao)**.
+
+No primeiro login, o app pede o nome da barbearia. Ele aparece no topo da tela inicial e pode ser trocado tocando nele.
 
 7. Para usar no celular, publique a pasta (Firebase Hosting, Netlify, Vercel ou GitHub Pages - precisa ser HTTPS). No Chrome do celular: menu > **Instalar app**.
 
@@ -47,6 +56,7 @@ Se o login der erro de dominio nao autorizado, va em Authentication > Configurac
 
 ```
 users/{uid}/
+  perfil/nome         nome da barbearia (escolhido no primeiro login)
   servicos/{id}       nome, preco, ativo, ordem
   atendimentos/{id}   servicoId, servicoNome, cliente, inicio, fim, valor, gorjeta, pagamento, status
   despesas/{id}       descricao, valor, categoria, data (AAAA-MM-DD)
