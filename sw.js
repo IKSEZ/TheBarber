@@ -1,7 +1,7 @@
 // Service worker simples: guarda os arquivos do app para abrir rapido e funcionar sem sinal.
 // Os dados ficam no Firebase (que tambem guarda cache local do banco).
-const CACHE = 'barbearia-v2';
-const ASSETS = ['./', 'index.html', 'styles.css', 'app.js', 'firebase-config.js', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png'];
+const CACHE = 'barbearia-v5';
+const ASSETS = ['./', 'index.html', 'styles.css?v=5', 'app.js?v=5', 'firebase-config.js', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
@@ -23,12 +23,13 @@ self.addEventListener('fetch', (e) => {
 
   // rede primeiro (pega atualizacoes), cache como reserva
   e.respondWith(
-    fetch(req)
+    // no-cache: sempre confere com o servidor, para nunca misturar HTML novo com CSS velho
+    fetch(new Request(req.url, { cache: 'no-cache', credentials: 'same-origin' }))
       .then((res) => {
         const copy = res.clone();
         caches.open(CACHE).then((c) => c.put(req, copy));
         return res;
       })
-      .catch(() => caches.match(req).then((r) => r || caches.match('index.html')))
+      .catch(() => caches.match(req, { ignoreSearch: true }).then((r) => r || caches.match('index.html')))
   );
 });

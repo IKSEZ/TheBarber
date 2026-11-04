@@ -113,13 +113,17 @@ function render() {
   const fns = { atender: vAtender, andamento: vAndamento, finalizar: vFinalizar, dashboard: vDashboard, gestao: vGestao };
   const semNome = !state.perfil || !state.perfil.nome;
   $('#app').classList.toggle('focus', semNome || state.view === 'andamento' || state.view === 'finalizar');
+  $('#app').classList.toggle('sem-nome', semNome);
+  $('#view').dataset.tela = semNome ? 'nome' : state.view;
+  if (!semNome) $('#nav-nome').textContent = state.perfil.nome;
   if (semNome) {
     // enquanto o perfil carrega, mostra a tela vazia para não piscar o nome padrão
     $('#view').innerHTML = state.perfil === undefined ? '' : vNome();
     return;
   }
   $('#view').innerHTML = (fns[state.view] || vAtender)();
-  $$('#nav button').forEach((b) => b.classList.toggle('on', b.dataset.v === state.view));
+  const navAtual = state.view === 'andamento' || state.view === 'finalizar' ? 'atender' : state.view;
+  $$('#nav button').forEach((b) => b.classList.toggle('on', b.dataset.v === navAtual));
   if (state.view === 'andamento') startTimer();
 }
 // re-render quando chegam dados, sem atrapalhar quem esta digitando no "Finalizar"
@@ -159,6 +163,7 @@ function vAtender() {
       <button class="icon-btn" data-act="sair" aria-label="Sair da conta">${ICON.logout}</button>
     </div>
 
+    <div class="pane pane-main">
     <div>
       <div class="date">${dataTxt}</div>
       <h1 class="title">Pronto para atender?</h1>
@@ -177,6 +182,14 @@ function vAtender() {
         <button class="serv extra" data-act="outro">${ICON.plus}<span class="n">Outro serviço, com valor livre</span></button>
       </div>
     </div>
+    </div>
+
+    <div class="pane pane-side">
+    <div class="desk-only resumo">
+      <div class="rot">próximo atendimento</div>
+      <p class="resumo-serv">${state.sel ? esc(state.sel.nome) : 'Escolha um serviço'}</p>
+      <span class="num resumo-preco">${state.sel ? money(state.sel.preco) : ''}</span>
+    </div>
 
     <label class="field">
       <span>cliente</span>
@@ -185,8 +198,14 @@ function vAtender() {
 
     <div class="spacer"></div>
     <button class="btn-primary" data-act="iniciar" ${state.sel ? '' : 'disabled'}>${ICON.play} Iniciar atendimento</button>
+    </div>
   `;
 }
+
+/* ---------------- nome guardado no aparelho (para a tela de login) ---------------- */
+const NOME_KEY = 'barbearia:nome';
+const nomeGuardado = () => { try { return localStorage.getItem(NOME_KEY) || ''; } catch (_) { return ''; } };
+const lembrarNome = (nome) => { try { localStorage.setItem(NOME_KEY, nome); } catch (_) { /* sem armazenamento */ } };
 
 /* ---------------- tela: Nome da barbearia (primeiro acesso) ---------------- */
 function vNome() {
@@ -208,6 +227,7 @@ function vNome() {
 const salvarNome = (nome) => {
   state.perfil = { ...(state.perfil || {}), nome };
   document.title = nome;
+  lembrarNome(nome);
   return set(ref(db, P('perfil/nome')), nome).catch(falhou);
 };
 
@@ -216,6 +236,7 @@ function vAndamento() {
   const a = state.ativo;
   if (!a) { queueMicrotask(() => go('atender')); return ''; }
   return `
+    <div class="pane pane-main">
     <div class="top">
       <span class="pill"><i></i> em atendimento</span>
       <span class="date">desde ${hhmm(a.inicio)}</span>
@@ -225,7 +246,9 @@ function vAndamento() {
       <div class="rot">tempo na cadeira</div>
       <div class="timer" id="timer" role="timer" aria-label="Tempo de atendimento">00:00</div>
     </div>
+    </div>
 
+    <div class="pane pane-side">
     <div class="comanda">
       <div class="com-head">
         <div>
@@ -244,6 +267,7 @@ function vAndamento() {
         <button class="btn-ghost" data-act="trocar">Trocar serviço</button>
         <button class="btn-ghost btn-danger" data-act="cancelar">Cancelar</button>
       </div>
+    </div>
     </div>
   `;
 }
@@ -403,7 +427,7 @@ function vDashboard() {
       ${chartSvg(items)}
     </div>
 
-    <div class="bloco">
+    <div class="bloco top-serv">
       <div class="label">serviços mais feitos</div>
       ${top.length ? top.map(([nome, c]) => `
         <div class="bar-row"><span class="n">${esc(nome)}</span><div class="t"><i style="width:${Math.round((c / maxC) * 100)}%"></i></div><span class="c">${c}</span></div>`).join('')
@@ -766,7 +790,7 @@ function conectar() {
   });
   ouvir('perfil', (snap) => {
     state.perfil = snap.val() || null;
-    if (state.perfil?.nome) document.title = state.perfil.nome;
+    if (state.perfil?.nome) { document.title = state.perfil.nome; lembrarNome(state.perfil.nome); }
     renderSoft();
     if (!state.perfil?.nome) setTimeout(() => $('#nome-barbearia')?.focus(), 50);
   });
@@ -789,6 +813,12 @@ function desconectar() {
 const loginEl = $('#login'), appEl = $('#app');
 
 function mostrarLogin() {
+  const nome = nomeGuardado();
+  if (nome) {
+    $('#login-nome').textContent = nome;
+    $('#login-saud').textContent = 'bem-vindo de volta';
+  }
+  document.title = nome || 'Minha Barbearia';
   appEl.hidden = true; loginEl.hidden = false;
   clearInterval(timerId);
 }
@@ -855,7 +885,6 @@ if (!configurado) {
     } else {
       desconectar();
       Object.assign(state, { uid: null, perfil: undefined, servicos: {}, atendimentos: {}, despesas: {}, ativo: null });
-      document.title = 'Minha Barbearia';
       $('#login-senha').value = '';
       mostrarLogin();
     }
@@ -866,45 +895,46 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 }
 
-/* --------------- Instalação PWA (Banner Personalizado) --------------- */
+/* --------------- Instalação PWA (aviso compacto, só em celular/tablet) --------------- */
 const installBanner = $('#install-banner');
 const btnInstalar = $('#btn-instalar');
 const installText = $('#install-text');
+const INSTALL_OFF = 'barbearia:install-off';
 let promptInstalacao = null;
 
-// Verifica se o app já está instalado (rodando de forma autônoma)
-const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+const jaInstalado = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+const ehToque = window.matchMedia('(pointer: coarse)').matches;
+const dispensado = () => { try { return localStorage.getItem(INSTALL_OFF) === '1'; } catch (_) { return false; } };
+const mostrarAviso = () => { installBanner.hidden = false; };
+const esconderAviso = () => { installBanner.hidden = true; };
 
-if (!isStandalone && installBanner) {
-  // Detecta se é um dispositivo iOS
+$('#install-fechar').addEventListener('click', () => {
+  esconderAviso();
+  try { localStorage.setItem(INSTALL_OFF, '1'); } catch (_) { /* sem armazenamento */ }
+});
+
+if (installBanner && !jaInstalado && ehToque && !dispensado()) {
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
 
   if (isIOS) {
-    // No iOS não existe botão nativo. Ensinamos o caminho manual.
-    installBanner.style.display = 'flex';
-    btnInstalar.style.display = 'none'; // Esconde o botão
-    installText.innerHTML = `
-      Para instalar no iPhone:<br><br>
-      1. Toque em <b>Compartilhar</b> (quadrado com a seta no rodapé)<br>
-      2. Role para baixo e toque em <b>Adicionar à Tela de Início</b>
-    `;
+    // No iOS não existe botão nativo: mostra o caminho manual
+    btnInstalar.hidden = true;
+    installText.innerHTML = 'Para instalar: toque em <b>Compartilhar</b> e depois em <b>Adicionar à Tela de Início</b>.';
+    mostrarAviso();
   } else {
-    // No Android / Chrome, o navegador dispara um evento quando o PWA está pronto
+    // Android / Chrome avisam quando o app pode ser instalado
     window.addEventListener('beforeinstallprompt', (e) => {
-      e.preventDefault(); // Impede o banner padrão do navegador
+      e.preventDefault();
       promptInstalacao = e;
-      installBanner.style.display = 'flex'; // Mostra nosso banner customizado
+      mostrarAviso();
     });
-
     btnInstalar.addEventListener('click', async () => {
       if (!promptInstalacao) return;
-      promptInstalacao.prompt(); // Mostra a janela nativa do Android
-      
+      promptInstalacao.prompt();
       const { outcome } = await promptInstalacao.userChoice;
-      if (outcome === 'accepted') {
-        installBanner.style.display = 'none'; // Esconde após instalar
-      }
+      if (outcome === 'accepted') esconderAviso();
       promptInstalacao = null;
     });
   }
 }
+window.addEventListener('appinstalled', esconderAviso);
